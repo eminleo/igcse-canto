@@ -1,6 +1,6 @@
 {
   "name": "IGCSE一日一字demo",
-  "short_name": "IGCSE粵語",
+  "short_name": "Jack一日一字demo",
   "description": "準備 IGCSE 中文考試",
   "version": "2.25",
   "id": "/",
@@ -23,4 +23,5 @@
       "type": "image/png"
     }
   ]
+
 }
