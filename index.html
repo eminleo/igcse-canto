@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8" />
+    <!-- [iOS優化] viewport-fit=cover 讓內容延伸到瀏海區 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>IGCSE一日一字demo</title>
+    
+    <!-- PWA 設定 -->
+    <meta name="theme-color" content="#f5f5dc" />
+    <link rel="icon" type="image/png" href="./icon.png" />
+    <link rel="apple-touch-icon" href="./icon.png" />
+    <link rel="manifest" href="./manifest.json" />
+
+    <!-- [iOS優化] 讓 iOS 支援 PWA 全螢幕模式 (隱藏 Safari 工具列) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IGCSE粵語">
+
+    <!-- 1. 引入 React 和 Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Confetti (禮花炮) 特效庫 -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+
+    <!-- 2. 引入字庫 -->
+    <script src="./words.js"></script>
+
+    <!-- 3. CSS 樣式：完美復刻筆記本風格 -->
+    <style>
+        /* [iOS優化] 全局禁止選取文字，並移除點擊高亮 */
+        * {
+            -webkit-tap-highlight-color: transparent; /* 移除點擊時的藍色/灰色框 */
+            box-sizing: border-box;
+        }
+
+        body { 
+            margin: 0; 
+            padding: 0; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            /* [iOS優化] 禁止長按選取文字 */
+            -webkit-user-select: none;
+            user-select: none;
+            /* [iOS優化] 防止 iOS 回彈效果 */
+            overscroll-behavior-y: none;
+        }
+        
+        .page-wrapper {
+            min-height: 100vh;
+            width: 100%;
+            background-color: #f5f5dc;
+            /* 橫線紙紋理 */
+            background-image: url("https://www.transparenttextures.com/patterns/lined-paper-2.png");
+            color: #000;
+            display: flex;
+            justify-content: center;
+        }
+
+        .app-container { 
+            width: 100%;
+            max-width: 480px; 
+            min-height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            position: relative;
+            background: transparent;
+        }
+        
+        /* Header */
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            /* [iOS優化] 增加 padding-top 以避開瀏海 (Safe Area) */
+            padding: max(15px, env(safe-area-inset-top)) 20px 15px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(245, 245, 220, 0.95);
+            border-bottom: 2px solid #000;
+            /* [iOS優化] 高度自動適應瀏海 */
+            height: auto; 
+            min-height: 60px;
+        }
+        .header-title { 
+            font-size: 1.2rem; 
+            font-weight: bold; 
+            transition: color 0.3s;
+        }
+        
+        /* [動畫] 答對時的彈跳動畫 */
+        @keyframes popSuccess {
+            0% { transform: scale(1); color: #000; }
+            50% { transform: scale(1.4); color: #2e7d32; } /* 變大且變綠 */
+            100% { transform: scale(1); color: #000; }
+        }
+        .animate-pop-success {
+            animation: popSuccess 0.4s ease-out;
+        }
+
+        /* [動畫] 答錯時的搖晃動畫 */
+        @keyframes shakeError {
+            0% { transform: translateX(0); color: #000; }
+            25% { transform: translateX(-5px); color: #d32f2f; } /* 變紅 */
+            50% { transform: translateX(5px); }
+            75% { transform: translateX(-5px); }
+            100% { transform: translateX(0); color: #000; }
+        }
+        .animate-shake-error {
+            animation: shakeError 0.4s ease-in-out;
+        }
+
+        .streak-badge { 
+            font-size: 0.9rem; 
+            font-weight: bold; 
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* Home 鍵無框樣式 */
+        .header-home-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .header-home-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* [iOS優化] 底部內容避開 Home Indicator (黑條) */
+        .content-area { 
+            padding: 20px; 
+            flex: 1; 
+            overflow-y: auto; 
+            padding-bottom: max(20px, env(safe-area-inset-bottom));
+        }
+
+        /* UI 元件：按鈕與卡片 */
+        .btn {
+            display: block;
+            width: 100%;
+            background-color: #fff;
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            cursor: pointer;
+            text-align: left;
+            transition: transform 0.1s, background 0.1s;
+            position: relative;
+            color: #000;
+        }
+        .btn:active { transform: scale(0.98); background-color: #eee; }
+        .btn:disabled { 
+            opacity: 0.5; 
+            cursor: not-allowed; 
+            background-color: #e0e0e0; 
+            border-color: #999; 
+            color: #888;
+        }
+        .btn-center { text-align: center; }
+
+        .btn-primary { background-color: #000; color: #fff; text-align: center; }
+        .btn-secondary { background-color: #fff; color: #000; text-align: center; }
+        
+        .btn-resume { 
+            background-color: #ffeb3b; 
+            color: #000; 
+            border: 2px solid #000; 
+            text-align: center; 
+            font-weight: bold;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.1);
+        }
+        
+        .btn-audio { width: auto; display: inline-block; padding: 5px 12px; margin-top: 10px; font-size: 0.9rem; background-color: #fff; color: #000; }
+        .btn-small { width: auto; padding: 8px 16px; font-size: 0.9rem; margin-bottom: 20px; display: inline-block; text-align: center; }
+        .btn-next { text-align: center; font-weight: bold; margin-top: 20px; }
+        
+        .card {
+            background-color: #fff;
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 4px 4px 0px rgba(0,0,0,0.1);
+        }
+
+        /* 文字樣式 - [UI修改] 題目放大 */
+        .chinese-text { font-size: 5rem; margin: 10px 0; font-weight: bold; }
+        .jyutping-text { font-size: 1.2rem; color: #555; margin-bottom: 10px; }
+        
+        /* 測驗選項 - [UI修改] 選項佈局 */
+        .options-grid { display: flex; flex-direction: column; gap: 10px; }
+        
+        /* 新的選項容器樣式 (取代原本單純的 button) */
+        .option-container {
+            display: flex;
+            align-items: stretch; /* 讓左右高度一致 */
+            background-color: #fff;
+            border: 3px solid #000;
+            border-radius: 8px;
+            margin-bottom: 0; /* grid gap 處理間距 */
+            cursor: pointer;
+            overflow: hidden; /* 確保圓角 */
+            transition: transform 0.1s;
+        }
+        .option-container:active { transform: scale(0.98); }
+        
+        /* 左側文字區域 */
+        .option-text-area {
+            flex: 1; /* 佔據大部分空間 */
+            padding: 15px;
+            font-size: 1rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            border-right: 1px solid #ddd; /* 分隔線 */
+        }
+        
+        /* 右側音頻按鈕區域 */
+        .option-audio-area {
+            width: 50px; /* 固定寬度 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            background: #f9f9f9;
+        }
+        .option-audio-area:active { background: #e0e0e0; }
+
+        /* 狀態樣式 */
+        .option-container.correct { background: #000; color: #fff; border-color: #000 !important; }
+        .option-container.correct .option-audio-area { background: #333; color: #fff; border-left-color: #555; }
+        
+        .option-container.wrong { background: #ccc; text-decoration: line-through; border-color: #999 !important; color: #333; }
+        .option-container.disabled { pointer-events: none; opacity: 0.6; }
+
+        /* 計時器條 */
+        .timer-grid { display: flex; gap: 4px; margin-bottom: 20px; height: 12px; }
+        .timer-block { flex: 1; background: #ddd; border: 1px solid #999; border-radius: 2px; }
+        .timer-block.active { background: #000; border-color: #000; }
+        .timer-block.active.danger { background: #ff4d4d; border-color: #ff4d4d; }
+
+        /* WordBank (原 Pokedex) */
+        .unlocked-card { 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            text-align: left; 
+            cursor: pointer; 
+            padding: 15px;
+        }
+        .unlocked-card:active { background: #f9f9f9; }
+        /* [UI修改] WordBank 字體放大 */
+        .word-chinese { font-size: 2rem; font-weight: bold; }
+        .word-english { font-size: 1.2rem; color: #666; }
+        .word-jyutping-small { font-size: 0.9rem; color: #888; }
+
+        /* 區塊標題 */
+        .section-header {
+            text-align: left;
+            margin: 25px 0 15px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #333;
+            border-bottom: 2px dashed #999;
+            padding-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* 鎖定狀態 Badge */
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            float: right;
+            vertical-align: middle;
+        }
+        .badge-locked { background: #eee; color: #666; }
+        .badge-completed { background: #000; color: #fff; }
+        
+        .feedback-section { animation: fadeIn 0.3s; text-align: center; margin-top: 20px; }
+        .feedback-text { font-size: 1.5rem; font-weight: bold; margin-bottom: 15px; }
+
+        .topic-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        const WORDS = window.WORDS || [];
+
+        const APP_VERSION = '2.25'; // 已更新至 2.25，與 PWA 同步
+        const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
+
+        const CATEGORIES = {
+            HIGH_FREQ: [
+                "Pronouns", "Countries/Languages", "Numbers", "Quantities", "Colours", 
+                "Time", "Days", "Months", "Verbs", "Modal verbs", "Adjectives", 
+                "Adverbs", "Question words", "Locations", "Connecting words", 
+                "Social", "Abbreviations", "Others"
+            ],
+            TOPIC_RELATED: [
+                "Town & Rural", "Holidays", "Services", "Customs", "Traditions", 
+                "School Life", "School Rules", "School Trips", "Work", "Future Plans", 
+                "Home", "Daily Routine", "Role Models", "Family", "Childhood", 
+                "Environment Issues", "Weather", "Transport", "Media", "Technology", 
+                "Special Occasions", "Food & Drink", "Hobbies", "Shopping", "Health"
+            ]
+        };
+
+        const getTopicEmoji = (topic) => {
+             const map = {
+                "Pronouns": "👆", "Countries/Languages": "🌍", "Numbers": "1️⃣", "Food & Drink": "🍔",
+                "School Life": "🎒", "Animals": "🐶", "Transport": "🚗", "Time": "⏰",
+                "Family": "👨‍👩‍👧", "Weather": "🌤️", "Shopping": "🛍️", "Health": "🏥",
+                "Technology": "💻", "Holidays": "🏖️", "Work": "💼", "School Rules": "📜",
+                "Services": "📮", "Home": "🏠"
+            };
+            return map[topic] || "📂";
+        };
+
+        // Fisher-Yates 洗牌算法
+        const shuffleArray = (array) => {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        };
+
+        const getTodayString = () => new Date().toDateString();
+
+        // ---------------------------------------------------------
+        // QuizView: 測驗介面
+        // ---------------------------------------------------------
+        const QuizView = ({ wordsToQuiz, initialIndex, mode, onFinish, progress, setProgress, currentStreak, setCurrentStreak, onUpdateMaxStreak, handleDailyCheckIn, saveSession, clearSession, existingSession, setHeaderTitle, setHeaderClass }) => {
+            const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
+            const [currentOptions, setCurrentOptions] = useState([]);
+            const [hasAnswered, setHasAnswered] = useState(false);
+            const [timeLeft, setTimeLeft] = useState(10);
+            const timerRef = useRef(null);
+
+            const currentWord = wordsToQuiz[currentIndex];
+            const isTimedMode = mode === 'SPEED_QUIZ' || mode === 'MARATHON';
+
+            // [初始化標題]
+            useEffect(() => {
+                // 進入 Quiz Mode，標題改為空白
+                setHeaderTitle("");
+                setHeaderClass("");
+            }, []);
+
+            // [機制 3: 存檔 & 防作弊] 每次題目改變時存檔
+            useEffect(() => {
+                if (currentWord && currentOptions.length > 0) {
+                    saveSession({
+                        wordsToQuiz: wordsToQuiz, 
+                        currentIndex: currentIndex,
+                        mode: mode,
+                        currentOptions: currentOptions, 
+                        currentWordId: currentWord.id
+                    });
+                }
+            }, [currentIndex, currentWord, currentOptions, mode]);
+
+            useEffect(() => {
+                if (!currentWord) return;
+                
+                // 重置狀態
+                setHasAnswered(false);
+                setTimeLeft(10);
+                // 重置標題 (如果是下一題)
+                setHeaderTitle(""); 
+                setHeaderClass("");
+
+                if (existingSession && existingSession.currentWordId === currentWord.id && existingSession.currentOptions) {
+                     if (currentIndex === initialIndex && currentOptions.length === 0) {
+                         setCurrentOptions(existingSession.currentOptions);
+                         return; 
+                     }
+                }
+                
+                const validDistractors = WORDS.filter(candidate => {
+                    if (candidate.id === currentWord.id) return false;
+                    if (currentWord.group_id && candidate.group_id) {
+                        if (currentWord.group_id === candidate.group_id) return false;
+                    }
+                    if (currentWord.synonym_group && candidate.synonym_group) {
+                         if (currentWord.synonym_group === candidate.synonym_group) return false;
+                    }
+                    return true;
+                });
+
+                const shuffledDistractors = shuffleArray(validDistractors).slice(0, 3);
+                const finalOptions = shuffleArray([currentWord, ...shuffledDistractors]);
+                
+                setCurrentOptions(finalOptions);
+            }, [currentIndex, currentWord]); 
+
+            // [修復 1: 計時器優化] 移除依賴 timeLeft，避免每秒重啟
+            useEffect(() => {
+                if (isTimedMode && !hasAnswered) {
+                    timerRef.current = setInterval(() => {
+                        setTimeLeft((prevTime) => {
+                            if (prevTime <= 1) {
+                                clearInterval(timerRef.current);
+                                return 0;
+                            }
+                            return prevTime - 1;
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(timerRef.current);
+            }, [isTimedMode, hasAnswered]);
+
+            // 播放題目的廣東話
+            const playAudio = () => {
+                if (!('speechSynthesis' in window)) return;
+                // [修復 2: 語音防撞]
+                window.speechSynthesis.cancel();
+                
+                const u = new SpeechSynthesisUtterance(currentWord.chinese);
+                u.lang = 'zh-HK';
+                u.rate = 0.6;
+                
+                setTimeout(() => {
+                    window.speechSynthesis.speak(u);
+                }, 10);
+            };
+
+            // 播放選項的英文 (點擊喇叭時)
+            const playOptionAudio = (text) => {
+                if (!('speechSynthesis' in window)) return;
+                // [修復 2: 語音防撞]
+                window.speechSynthesis.cancel();
+                
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'en-US'; // 選項是英文
+                u.rate = 0.8;
+                
+                setTimeout(() => {
+                    window.speechSynthesis.speak(u);
+                }, 10);
+            };
+
+            const handleOptionClick = (selected) => {
+                if (hasAnswered) return;
+                clearInterval(timerRef.current);
+                setHasAnswered(true);
+                
+                const isCorrect = selected.id === currentWord.id;
+                const newProgress = { ...progress };
+                const wordId = currentWord.id;
+                const status = newProgress[wordId] || { status: 'LOCKED', review_count: 0 };
+
+                // [加分邏輯]
+                // 1. 預設不加分
+                let shouldAddScore = false;
+
+                if (isCorrect) {
+                    status.status = 'UNLOCKED';
+                    
+                    // 2. 判斷是否加分
+                    if (isTimedMode) {
+                        // Quiz & Marathon: 必須在時間結束前 (timeLeft > 0) 也就是10秒內答對才加分
+                        // 如果時間變成 0 才按，就不加分
+                        if (timeLeft > 0) {
+                            shouldAddScore = true;
+                        }
+                    } else {
+                        // 非計時模式 (Adventure, Review)：答對就加分
+                        shouldAddScore = true;
+                    }
+
+                    // 3. 執行加分
+                    if (shouldAddScore) {
+                        status.review_count = (status.review_count || 0) + 1;
+                    }
+                    
+                    // [修改] 更新 Header 顯示 Correct
+                    setHeaderTitle("✅ Correct!");
+                    setHeaderClass("animate-pop-success");
+
+                    // [新增] 觸發禮花炮 (Confetti)
+                    if (window.confetti) {
+                        window.confetti({
+                            particleCount: 150,
+                            spread: 60,
+                            origin: { y: 0.7 },
+                            colors: OPTION_COLORS, // 使用 App 主題色
+                            disableForReducedMotion: true
+                        });
+                    }
+
+                    const newStreak = currentStreak + 1;
+                    setCurrentStreak(newStreak);
+                    if (mode === 'SPEED_QUIZ' || mode === 'MARATHON') {
+                        onUpdateMaxStreak(newStreak);
+                    }
+                } else {
+                    if (status.status === 'LOCKED') status.status = 'SEEN';
+                    
+                    // [修改] 更新 Header 顯示 Incorrect
+                    setHeaderTitle("❌ Incorrect!");
+                    setHeaderClass("animate-shake-error");
+
+                    setCurrentStreak(0); 
+                }
+
+                newProgress[wordId] = status;
+                setProgress(newProgress);
+                localStorage.setItem('igcse_progress_v2', JSON.stringify(newProgress));
+            };
+
+            const handleNext = () => {
+                if (currentIndex < wordsToQuiz.length - 1) {
+                    setCurrentIndex(prev => prev + 1);
+                } else {
+                    if (mode === 'REVIEW') {
+                        handleDailyCheckIn();
+                    }
+                    clearSession();
+                    onFinish();
+                }
+            };
+
+            if (!currentWord) return <div>Loading...</div>;
+
+            const remaining = wordsToQuiz.length - currentIndex;
+
+            return (
+                <div className="quiz-container">
+                    <div className="quiz-header-info">
+                        <span style={{fontWeight:'bold'}}>Target: {remaining} words</span>
+                    </div>
+
+                    {isTimedMode && !hasAnswered && (
+                        <div className="timer-grid">
+                            {Array.from({ length: 10 }).map((_, i) => (
+                                <div key={i} className={`timer-block ${i + 1 <= timeLeft ? 'active' : ''} ${timeLeft <= 3 ? 'danger' : ''}`}></div>
+                            ))}
+                        </div>
+                    )}
+
+                    <div className="card">
+                        <h1 className="chinese-text">{currentWord.chinese}</h1>
+                        <p className="jyutping-text">{currentWord.jyutping}</p>
+                        <button className="btn btn-audio btn-primary" onClick={playAudio}>🔊 Play Audio</button>
+                    </div>
+
+                    <div className="options-grid">
+                        {currentOptions.map((opt, i) => {
+                            let containerClass = "option-container";
+                            if (hasAnswered) {
+                                if (opt.id === currentWord.id) containerClass += " correct";
+                                else if (opt.id !== currentWord.id && currentOptions.indexOf(opt) === i) containerClass += " wrong";
+                                else containerClass += " disabled";
+                            }
+                            const borderColor = OPTION_COLORS[i % 4];
+
+                            return (
+                                <div 
+                                    key={opt.id} 
+                                    className={containerClass} 
+                                    style={{
+                                        borderColor: borderColor,
+                                    }}
+                                    onClick={() => handleOptionClick(opt)}
+                                >
+                                    {/* 左側文字區域 */}
+                                    <div className="option-text-area">
+                                        {opt.english}
+                                    </div>
+                                    
+                                    {/* 右側音頻按鈕區域 */}
+                                    <div 
+                                        className="option-audio-area"
+                                        onClick={(e) => {
+                                            e.stopPropagation(); // 防止觸發答題
+                                            playOptionAudio(opt.english);
+                                        }}
+                                    >
+                                        🔊
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {hasAnswered && (
+                        <div className="feedback-section">
+                            {/* [修改] 移除了這裡的文字回饋，因為已經搬到標題了 */}
+                            <button className="btn btn-primary btn-next" onClick={handleNext}>
+                                {currentIndex < wordsToQuiz.length - 1 ? 'Next ➡' : 'Finish'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ---------------------------------------------------------
+        // WordBankView (原 Pokedex)
+        // ---------------------------------------------------------
+        const WordBankView = ({ progress, setView }) => {
+            const [cat, setCat] = useState(null);
+            const [topic, setTopic] = useState(null);
+
+            const playDual = (w) => {
+                // [修復 2: 語音防撞]
+                window.speechSynthesis.cancel();
+                
+                const u1 = new SpeechSynthesisUtterance(w.chinese);
+                u1.lang = 'zh-HK';
+                u1.rate = 0.6;
+                
+                const u2 = new SpeechSynthesisUtterance(w.english);
+                u2.lang = 'en-US';
+                
+                setTimeout(() => {
+                    window.speechSynthesis.speak(u1);
+                    window.speechSynthesis.speak(u2);
+                }, 10);
+            };
+
+            if (topic) {
+                const list = WORDS.filter(w => w.topic === topic);
+                const unlocked = list.filter(w => progress[w.id]?.status === 'UNLOCKED');
+                
+                return (
+                    <div className="pokedex-container">
+                        <h2 style={{textAlign:'center'}}>{getTopicEmoji(topic)} {topic}</h2>
+                        <div className="word-list">
+                            {unlocked.length === 0 ? <p style={{textAlign:'center'}}>No words unlocked yet.</p> : 
+                                unlocked.map(w => (
+                                    <div key={w.id} className="card unlocked-card" onClick={() => playDual(w)}>
+                                        <div className="word-main">
+                                            <span className="word-chinese">{w.chinese}</span>
+                                            <span className="word-jyutping-small">({w.jyutping})</span>
+                                        </div>
+                                        {/* [修改] 移除按鈕 class 和 邊框 */}
+                                        <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'5px'}}>
+                                            <span className="word-english">{w.english}</span>
+                                            <button 
+                                                style={{background:'none', border:'none', fontSize:'1.2rem', cursor:'pointer', padding:'0 5px'}} 
+                                                onClick={(e) => { e.stopPropagation(); playDual(w); }}
+                                            >
+                                                🔊
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </div>
+                );
+            }
+
+            if (cat) {
+                return (
+                    <div className="pokedex-container">
+                        <h2 style={{textAlign:'center'}}>Select a Topic</h2>
+                        <div className="topic-grid">
+                            {CATEGORIES[cat].map(t => {
+                                const total = WORDS.filter(w => w.topic === t).length;
+                                const got = WORDS.filter(w => w.topic === t && progress[w.id]?.status === 'UNLOCKED').length;
+                                return (
+                                    <button key={t} className="btn" onClick={() => setTopic(t)}>
+                                        {t} 
+                                        <span className="status-badge badge-locked">
+                                            {got}/{total}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            }
+
+            const totalGot = Object.values(progress).filter(p => p.status === 'UNLOCKED').length;
+            return (
+                <div className="pokedex-container">
+                    <h2 style={{textAlign:'center'}}>🏆 Word Bank</h2>
+                    <p style={{textAlign:'center', marginBottom:'20px'}}>Collected: {totalGot} / {WORDS.length}</p>
+                    <div className="menu-section">
+                        <button className="btn btn-center" onClick={() => setCat('HIGH_FREQ')}>📕 High Frequency Language</button>
+                        <button className="btn btn-center" onClick={() => setCat('TOPIC_RELATED')}>🏙️ Topic-related Vocabulary</button>
+                    </div>
+                </div>
+            );
+        };
+
+        // ---------------------------------------------------------
+        // App
+        // ---------------------------------------------------------
+        function App() {
+            const [view, setView] = useState('HOME');
+            const [catView, setCatView] = useState('MAIN');
+            const [quizData, setQuizData] = useState([]);
+            const [quizMode, setQuizMode] = useState('MAINLINE');
+            const [initialQuizIndex, setInitialQuizIndex] = useState(0);
+            
+            // [新增] 標題文字與動畫 Class 狀態
+            const [headerTitle, setHeaderTitle] = useState('IGCSE一日一字demo');
+            const [headerClass, setHeaderClass] = useState('');
+
+            const [progress, setProgress] = useState(() => {
+                try { return JSON.parse(localStorage.getItem('igcse_progress_v2')) || {}; } 
+                catch { return {}; }
+            });
+            const [maxStreak, setMaxStreak] = useState(() => parseInt(localStorage.getItem('igcse_max_streak_speed_marathon') || '0'));
+            const [dailyStreak, setDailyStreak] = useState(() => parseInt(localStorage.getItem('igcse_daily_streak_v2') || '0'));
+            const [lastCheckIn, setLastCheckIn] = useState(() => localStorage.getItem('igcse_last_checkin_v2'));
+            const [currentStreak, setCurrentStreak] = useState(0); 
+            const [showResetConfirm, setShowResetConfirm] = useState(false);
+            
+            const [existingSession, setExistingSession] = useState(null);
+
+            useEffect(() => {
+                window.history.replaceState({ view: 'HOME', catView: 'MAIN' }, '', '#home');
+                const handlePopState = (event) => {
+                    if (event.state) {
+                        setView(event.state.view || 'HOME');
+                        setCatView(event.state.catView || 'MAIN');
+                        // [修改] 歷史導航時重置標題
+                        setHeaderTitle('IGCSE一日一字demo');
+                        setHeaderClass('');
+                    } else {
+                        setView('HOME');
+                        setCatView('MAIN');
+                        setHeaderTitle('IGCSE一日一字demo');
+                    }
+                };
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, []);
+
+            const navigate = (newView, newCatView = 'MAIN') => {
+                setView(newView);
+                setCatView(newCatView);
+                // [修改] 切換畫面時重置標題
+                if (newView === 'HOME') {
+                    setHeaderTitle('IGCSE一日一字demo');
+                    setHeaderClass('');
+                }
+                const hash = newView === 'HOME' && newCatView === 'MAIN' ? '#home' 
+                           : `#${newView.toLowerCase()}${newCatView !== 'MAIN' ? '-' + newCatView.toLowerCase() : ''}`;
+                window.history.pushState({ view: newView, catView: newCatView }, '', hash);
+            };
+
+            useEffect(() => {
+                if (localStorage.getItem('app_version') !== APP_VERSION) {
+                    console.log("System update: Resetting data.");
+                    localStorage.removeItem('igcse_user_progress'); 
+                    localStorage.setItem('app_version', APP_VERSION);
+                }
+            }, []);
+
+            const saveSession = (data) => {
+                localStorage.setItem('igcse_quiz_session', JSON.stringify(data));
+            };
+            const clearSession = () => {
+                localStorage.removeItem('igcse_quiz_session');
+                setExistingSession(null);
+            };
+
+            const applyForceToTopLogic = (generatedList, mode) => {
+                try {
+                    const sessionStr = localStorage.getItem('igcse_quiz_session');
+                    if (!sessionStr) return { list: generatedList, session: null };
+                    
+                    const session = JSON.parse(sessionStr);
+                    
+                    if (session.mode !== mode) return { list: generatedList, session: null };
+
+                    const savedWordId = session.currentWordId;
+                    if (!savedWordId) return { list: generatedList, session: null };
+                    
+                    if (progress[savedWordId]?.status === 'UNLOCKED') {
+                        console.log("Session word already unlocked, clearing session.");
+                        clearSession();
+                        return { list: generatedList, session: null };
+                    }
+
+                    let targetIndex = generatedList.findIndex(w => w.id === savedWordId);
+                    let targetWord;
+
+                    if (targetIndex !== -1) {
+                        targetWord = generatedList[targetIndex];
+                        generatedList.splice(targetIndex, 1);
+                    } else {
+                        targetWord = WORDS.find(w => w.id === savedWordId);
+                    }
+
+                    if (targetWord) {
+                        generatedList.unshift(targetWord);
+                        console.log("Force to top applied for word:", targetWord.chinese);
+                        return { list: generatedList, session: session }; 
+                    }
+                } catch (e) { console.error("Force to top error", e); }
+                
+                return { list: generatedList, session: null };
+            };
+
+            const handleDailyCheckIn = () => {
+                const today = getTodayString();
+                if (lastCheckIn === today) return; 
+                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+                
+                let newStreak = 1;
+                if (lastCheckIn === yesterday.toDateString()) newStreak = dailyStreak + 1;
+                
+                setDailyStreak(newStreak);
+                setLastCheckIn(today);
+                localStorage.setItem('igcse_daily_streak_v2', newStreak.toString());
+                localStorage.setItem('igcse_last_checkin_v2', today);
+            };
+
+            const handleUpdateMaxStreak = (val) => {
+                if (val > maxStreak) {
+                    setMaxStreak(val);
+                    localStorage.setItem('igcse_max_streak_speed_marathon', val.toString());
+                }
+            };
+
+            const isTopicUnlocked = (topic, category) => {
+                const list = CATEGORIES[category];
+                const idx = list.indexOf(topic);
+                if (idx <= 0) return true; 
+
+                const prevTopic = list[idx - 1];
+                const prevWords = WORDS.filter(w => w.topic === prevTopic);
+                return prevWords.every(w => progress[w.id]?.status === 'UNLOCKED');
+            };
+
+            const startTopic = (topic) => {
+                const allWords = WORDS.filter(w => w.topic === topic);
+                const lockedWords = allWords.filter(w => !progress[w.id] || progress[w.id].status !== 'UNLOCKED');
+                
+                let rawList = lockedWords.length > 0 ? lockedWords : allWords;
+                rawList = shuffleArray(rawList);
+
+                const { list, session } = applyForceToTopLogic(rawList, 'MAINLINE');
+
+                setQuizData(list);
+                setExistingSession(session); 
+                setInitialQuizIndex(0);      
+                setQuizMode('MAINLINE');
+                navigate('QUIZ');
+            };
+
+            const startReview = () => {
+                const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
+                
+                // [修改] 先洗牌，再排序。解決同分時永遠選同一批字的問題。
+                const shuffledUnlocked = shuffleArray(unlocked);
+                
+                // 1. 根據熟悉度排序 (越不熟 review_count 越小，排前面)
+                const sorted = shuffledUnlocked.sort((a, b) => (progress[a.id].review_count || 0) - (progress[b.id].review_count || 0));
+                
+                // 2. 取前 10 個
+                let rawList = sorted.slice(0, 10);
+                
+                // 3. Fisher-Yates 洗牌 (出題順序)
+                rawList = shuffleArray(rawList);
+
+                const { list, session } = applyForceToTopLogic(rawList, 'REVIEW');
+
+                setQuizData(list);
+                setExistingSession(session);
+                setInitialQuizIndex(0);
+                setQuizMode('REVIEW');
+                navigate('QUIZ');
+            };
+
+            const startSpeed = () => {
+                const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
+                
+                // [修改] 先洗牌，再排序。解決同分時永遠選同一批字的問題。
+                const shuffledUnlocked = shuffleArray(unlocked);
+                
+                const sorted = shuffledUnlocked.sort((a, b) => (progress[a.id].review_count || 0) - (progress[b.id].review_count || 0));
+                let rawList = sorted.slice(0, 10);
+                rawList = shuffleArray(rawList);
+
+                const { list, session } = applyForceToTopLogic(rawList, 'SPEED_QUIZ');
+
+                setQuizData(list);
+                setExistingSession(session);
+                setInitialQuizIndex(0);
+                setQuizMode('SPEED_QUIZ');
+                navigate('QUIZ');
+            };
+
+            const startMarathon = () => {
+                const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
+                let rawList = shuffleArray(unlocked);
+
+                const { list, session } = applyForceToTopLogic(rawList, 'MARATHON');
+
+                setQuizData(list);
+                setExistingSession(session);
+                setInitialQuizIndex(0);
+                setQuizMode('MARATHON');
+                navigate('QUIZ');
+            };
+
+            const unlockedCount = Object.values(progress).filter(p => p.status === 'UNLOCKED').length;
+            const trainingOpen = unlockedCount >= 10;
+
+            const today = getTodayString();
+            const isCheckedInToday = lastCheckIn === today;
+            let displayDay = dailyStreak;
+            if (!isCheckedInToday) {
+                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+                if (lastCheckIn === yesterday.toDateString()) {
+                     displayDay = dailyStreak + 1; 
+                } else {
+                     displayDay = 0; 
+                }
+            }
+
+            return (
+                <div className="page-wrapper">
+                    {showResetConfirm && (
+                        <div style={{
+                            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000
+                        }}>
+                            <div style={{
+                                background: '#fff', padding: '20px', borderRadius: '8px', border: '2px solid #000', width: '80%', maxWidth: '300px', textAlign: 'center'
+                            }}>
+                                <h3>Reset Progress?</h3>
+                                <p>Are you sure?</p>
+                                <div style={{display: 'flex', gap: '10px', marginTop: '20px'}}>
+                                    <button className="btn" onClick={() => setShowResetConfirm(false)}>Cancel</button>
+                                    <button className="btn btn-primary" onClick={() => {
+                                        localStorage.clear();
+                                        window.location.reload();
+                                    }}>Yes, Reset</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="app-container">
+                        <header className="app-header">
+                            <div className="header-left">
+                                <span className="streak-badge">🔥 Max: {maxStreak}</span>
+                            </div>
+                            {/* [修改] 標題使用 state 控制，並加入動畫 class */}
+                            <div className={`header-title ${headerClass}`}>
+                                {headerTitle}
+                            </div>
+                            <button className="header-home-btn" onClick={() => navigate('HOME', 'MAIN')}>🏠</button>
+                        </header>
+
+                        <div className="content-area">
+                            {view === 'HOME' && catView === 'MAIN' && (
+                                <div className="menu-section">
+                                    <div className="section-header">🗺️ Adventure Mode</div>
+                                    
+                                    <button className="btn btn-center" onClick={() => navigate('HOME', 'HIGH_FREQ')}>
+                                        📕 High Frequency Language
+                                    </button>
+                                    <button className="btn btn-center" onClick={() => navigate('HOME', 'TOPIC_RELATED')}>
+                                        🏙️ Topic-related Vocabulary
+                                    </button>
+
+                                    <div className="section-header">
+                                        <span>🏋️ Training Center</span>
+                                        <span style={{fontSize:'0.8rem', fontWeight:'normal'}}>
+                                            {isCheckedInToday ? '✅' : '📅'} Day {displayDay}
+                                        </span>
+                                    </div>
+                                    
+                                    <button className="btn btn-center" disabled={!trainingOpen} onClick={startReview}>
+                                        📝 Review
+                                    </button>
+                                    <button className="btn btn-center" disabled={!trainingOpen} onClick={startSpeed} style={{marginTop:'10px'}}>
+                                        ⏱️ Quiz
+                                    </button>
+                                    <button className="btn btn-center" disabled={!trainingOpen} onClick={startMarathon} style={{marginTop:'10px'}}>
+                                        🏃 Marathon
+                                    </button>
+                                    {!trainingOpen && <p style={{textAlign:'center', fontSize:'0.8rem', color:'#666'}}>Unlock 10 words to open training</p>}
+
+                                    <div className="section-header">📚 Collection</div>
+                                    <button className="btn btn-center" onClick={() => navigate('WORDBANK')}>
+                                        💯 Word Bank ({unlockedCount}/{WORDS.length})
+                                    </button>
+
+                                    <div style={{marginTop:'30px', textAlign:'center'}}>
+                                        <button className="btn btn-small" style={{fontSize:'10px', width:'auto'}} onClick={() => setShowResetConfirm(true)}>
+                                            ⚠️ Reset All
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'HOME' && catView !== 'MAIN' && (
+                                <div>
+                                    <h2 style={{textAlign:'center', marginTop:0}}>
+                                        {catView === 'HIGH_FREQ' ? '📕 High Frequency Language' : '🏙️ Topic-related Vocabulary'}
+                                    </h2>
+                                    <div className="topic-grid">
+                                        {CATEGORIES[catView].map((t, index) => {
+                                            const total = WORDS.filter(w => w.topic === t).length;
+                                            const got = WORDS.filter(w => w.topic === t && progress[w.id]?.status === 'UNLOCKED').length;
+                                            const isDone = total > 0 && got === total;
+                                            const isOpen = isTopicUnlocked(t, catView);
+                                            
+                                            return (
+                                                <button 
+                                                    key={t} 
+                                                    className="btn" 
+                                                    disabled={!isOpen}
+                                                    onClick={() => isOpen && startTopic(t)}
+                                                    style={{opacity: isOpen ? 1 : 0.5}}
+                                                >
+                                                    {t}
+                                                    <span className={`status-badge ${isDone ? 'badge-completed' : 'badge-locked'}`}>
+                                                        {isOpen ? `${got}/${total}` : '🔒'}
+                                                    </span>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'QUIZ' && (
+                                <QuizView 
+                                    wordsToQuiz={quizData} 
+                                    initialIndex={initialQuizIndex}
+                                    mode={quizMode}
+                                    onFinish={() => navigate('HOME', 'MAIN')}
+                                    progress={progress}
+                                    setProgress={setProgress}
+                                    currentStreak={currentStreak}
+                                    setCurrentStreak={setCurrentStreak}
+                                    onUpdateMaxStreak={handleUpdateMaxStreak}
+                                    handleDailyCheckIn={handleDailyCheckIn}
+                                    saveSession={saveSession}
+                                    clearSession={clearSession}
+                                    existingSession={existingSession}
+                                    // [修改] 傳入修改標題的方法
+                                    setHeaderTitle={setHeaderTitle}
+                                    setHeaderClass={setHeaderClass}
+                                />
+                            )}
+
+                            {view === 'WORDBANK' && (
+                                <WordBankView progress={progress} setView={setView} />
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js', { scope: './' })
+            .then(reg => console.log('SW registered!', reg))
+            .catch(err => console.log('SW failed', err));
+        });
+      }
+    </script>
+</body>
+</html>
