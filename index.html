@@ -240,7 +240,8 @@
         .option-container.correct { background: #000; color: #fff; border-color: #000 !important; }
         .option-container.correct .option-audio-area { background: #333; color: #fff; border-left-color: #555; }
         
-        .option-container.wrong { background: #ccc; text-decoration: line-through; border-color: #999 !important; color: #333; }
+        /* [UI修復] 移除了 text-decoration: line-through */
+        .option-container.wrong { background: #ccc; border-color: #999 !important; color: #333; }
         .option-container.disabled { pointer-events: none; opacity: 0.6; }
 
         /* 計時器條 */
@@ -305,7 +306,7 @@
         
         const WORDS = window.WORDS || [];
 
-        const APP_VERSION = '2.27'; // Update version to trigger refresh if needed
+        const APP_VERSION = '2.28'; // Update version
         const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
 
         const CATEGORIES = {
@@ -353,6 +354,17 @@
             const voices = window.speechSynthesis.getVoices();
             // 優先找名字有 'Sin-ji' 或 '善怡' 的聲音
             return voices.find(v => v.name.includes('Sin-ji') || v.name.includes('善怡')) || null;
+        };
+
+        // [新增] 尋找英文語音 (Samantha / Fred 等) 以修復 iOS 混音問題
+        const getEnglishVoice = () => {
+            if (!('speechSynthesis' in window)) return null;
+            const voices = window.speechSynthesis.getVoices();
+            // 優先級: 1. Samantha (iOS 預設優質) 2. Fred (iOS 預設) 3. Daniel (iOS 英式) 4. 任何英文
+            return voices.find(v => v.name.includes('Samantha')) ||
+                   voices.find(v => v.name.includes('Fred')) ||
+                   voices.find(v => v.name.includes('Daniel')) ||
+                   voices.find(v => v.lang.includes('en-')) || null;
         };
 
         // ---------------------------------------------------------
@@ -468,6 +480,10 @@
                 const u = new SpeechSynthesisUtterance(text);
                 u.lang = 'en-US'; // 選項是英文
                 u.rate = 0.8;
+                
+                // [新增] 強制指定英文語音 (如 Samantha)，避免 iOS 用 Sin-ji 讀英文
+                const engVoice = getEnglishVoice();
+                if (engVoice) u.voice = engVoice;
                 
                 setTimeout(() => {
                     window.speechSynthesis.speak(u);
@@ -653,6 +669,9 @@
                 
                 const u2 = new SpeechSynthesisUtterance(w.english);
                 u2.lang = 'en-US';
+                // [新增] 強制指定英文語音
+                const engVoice = getEnglishVoice();
+                if (engVoice) u2.voice = engVoice;
                 
                 setTimeout(() => {
                     window.speechSynthesis.speak(u1);
