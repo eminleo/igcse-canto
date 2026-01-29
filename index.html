@@ -701,22 +701,10 @@
                                         <div style={{display:'flex', flexDirection:'column', alignItems:'flex-end', gap:'5px'}}>
                                             <span className="word-english">{w.english}</span>
                                             <button 
-                                                style={{background:'none', border:'none', fontSize:'1.2rem', cursor:'pointer', padding:'0 5px', position: 'relative'}} 
+                                                style={{background:'none', border:'none', fontSize:'1.2rem', cursor:'pointer', padding:'0 5px'}} 
                                                 onClick={(e) => { e.stopPropagation(); playDual(w); }}
                                             >
                                                 🔊
-                                                {/* [新增] 熟練分 (右下角超小字) */}
-                                                <span style={{
-                                                    fontSize: '0.6rem',
-                                                    position: 'absolute',
-                                                    bottom: '0',
-                                                    right: '0',
-                                                    color: '#999',
-                                                    lineHeight: '1',
-                                                    pointerEvents: 'none'
-                                                }}>
-                                                    {progress[w.id]?.review_count || 0}
-                                                </span>
                                             </button>
                                         </div>
                                     </div>
