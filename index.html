@@ -305,7 +305,7 @@
         
         const WORDS = window.WORDS || [];
 
-        const APP_VERSION = '2.25'; // 已更新至 2.25，與 PWA 同步
+        const APP_VERSION = '2.26'; // Update version
         const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
 
         const CATEGORIES = {
@@ -347,6 +347,14 @@
 
         const getTodayString = () => new Date().toDateString();
 
+        // [Bug Fix 2: Helper] 尋找 iOS 善怡老師 (Sin-ji)
+        const getCantoneseVoice = () => {
+            if (!('speechSynthesis' in window)) return null;
+            const voices = window.speechSynthesis.getVoices();
+            // 優先找名字有 'Sin-ji' 或 '善怡' 的聲音
+            return voices.find(v => v.name.includes('Sin-ji') || v.name.includes('善怡')) || null;
+        };
+
         // ---------------------------------------------------------
         // QuizView: 測驗介面
         // ---------------------------------------------------------
@@ -375,7 +383,9 @@
                         currentIndex: currentIndex,
                         mode: mode,
                         currentOptions: currentOptions, 
-                        currentWordId: currentWord.id
+                        currentWordId: currentWord.id,
+                        // [Bug Fix 3] 加存 topic 以便 Force to Top 檢查
+                        topic: currentWord.topic 
                     });
                 }
             }, [currentIndex, currentWord, currentOptions, mode]);
@@ -430,7 +440,7 @@
                 return () => clearInterval(timerRef.current);
             }, [isTimedMode, hasAnswered]);
 
-            // 播放題目的廣東話
+            // 播放題目的廣東話 [Bug Fix 2: 應用善怡老師]
             const playAudio = () => {
                 if (!('speechSynthesis' in window)) return;
                 // [修復 2: 語音防撞]
@@ -440,6 +450,10 @@
                 u.lang = 'zh-HK';
                 u.rate = 0.6;
                 
+                // 嘗試指定語音
+                const sinji = getCantoneseVoice();
+                if (sinji) u.voice = sinji;
+
                 setTimeout(() => {
                     window.speechSynthesis.speak(u);
                 }, 10);
@@ -509,9 +523,10 @@
                         });
                     }
 
-                    const newStreak = currentStreak + 1;
-                    setCurrentStreak(newStreak);
+                    // [Bug Fix 1] 只有在計時模式才更新連勝，且冒險/複習模式不影響
                     if (mode === 'SPEED_QUIZ' || mode === 'MARATHON') {
+                        const newStreak = currentStreak + 1;
+                        setCurrentStreak(newStreak);
                         onUpdateMaxStreak(newStreak);
                     }
                 } else {
@@ -521,7 +536,10 @@
                     setHeaderTitle("❌ Incorrect!");
                     setHeaderClass("animate-shake-error");
 
-                    setCurrentStreak(0); 
+                    // [Bug Fix 1] 只有在計時模式才歸零連勝
+                    if (mode === 'SPEED_QUIZ' || mode === 'MARATHON') {
+                        setCurrentStreak(0);
+                    }
                 }
 
                 newProgress[wordId] = status;
@@ -624,12 +642,14 @@
             const [topic, setTopic] = useState(null);
 
             const playDual = (w) => {
-                // [修復 2: 語音防撞]
+                // [修復 2: 語音防撞 + 善怡老師]
                 window.speechSynthesis.cancel();
                 
                 const u1 = new SpeechSynthesisUtterance(w.chinese);
                 u1.lang = 'zh-HK';
                 u1.rate = 0.6;
+                const sinji = getCantoneseVoice();
+                if (sinji) u1.voice = sinji;
                 
                 const u2 = new SpeechSynthesisUtterance(w.english);
                 u2.lang = 'en-US';
@@ -782,6 +802,7 @@
                 setExistingSession(null);
             };
 
+            // [機制 1: 強制置頂 Helper]
             const applyForceToTopLogic = (generatedList, mode) => {
                 try {
                     const sessionStr = localStorage.getItem('igcse_quiz_session');
@@ -794,7 +815,9 @@
                     const savedWordId = session.currentWordId;
                     if (!savedWordId) return { list: generatedList, session: null };
                     
-                    if (progress[savedWordId]?.status === 'UNLOCKED') {
+                    // [Bug Fix 3] 只有在 Adventure Mode 才需要檢查是否已解鎖
+                    // 如果是 Review/Quiz/Marathon，即使字解鎖了也要恢復 (因為本來就是考解鎖的字)
+                    if (mode === 'MAINLINE' && progress[savedWordId]?.status === 'UNLOCKED') {
                         console.log("Session word already unlocked, clearing session.");
                         clearSession();
                         return { list: generatedList, session: null };
@@ -870,16 +893,12 @@
             const startReview = () => {
                 const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
                 
-                // [修改] 先洗牌，再排序。解決同分時永遠選同一批字的問題。
                 const shuffledUnlocked = shuffleArray(unlocked);
                 
-                // 1. 根據熟悉度排序 (越不熟 review_count 越小，排前面)
                 const sorted = shuffledUnlocked.sort((a, b) => (progress[a.id].review_count || 0) - (progress[b.id].review_count || 0));
                 
-                // 2. 取前 10 個
                 let rawList = sorted.slice(0, 10);
                 
-                // 3. Fisher-Yates 洗牌 (出題順序)
                 rawList = shuffleArray(rawList);
 
                 const { list, session } = applyForceToTopLogic(rawList, 'REVIEW');
@@ -892,9 +911,11 @@
             };
 
             const startSpeed = () => {
+                // [Bug Fix 1] 開始新局，強制連勝歸零
+                setCurrentStreak(0);
+
                 const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
                 
-                // [修改] 先洗牌，再排序。解決同分時永遠選同一批字的問題。
                 const shuffledUnlocked = shuffleArray(unlocked);
                 
                 const sorted = shuffledUnlocked.sort((a, b) => (progress[a.id].review_count || 0) - (progress[b.id].review_count || 0));
@@ -911,6 +932,9 @@
             };
 
             const startMarathon = () => {
+                // [Bug Fix 1] 開始新局，強制連勝歸零
+                setCurrentStreak(0);
+
                 const unlocked = WORDS.filter(w => progress[w.id]?.status === 'UNLOCKED');
                 let rawList = shuffleArray(unlocked);
 
