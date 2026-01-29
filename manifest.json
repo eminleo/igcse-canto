@@ -1,6 +1,6 @@
 {
   "name": "IGCSE一日一字demo",
-  "short_name": "LKH mobile",
+  "short_name": "LKH anywhere",
   "description": "準備 IGCSE 中文考試",
   "version": "2.25",
   "id": "/",
@@ -25,4 +25,5 @@
   ]
 
 }
+
 
