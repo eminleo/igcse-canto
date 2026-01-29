@@ -88,8 +88,6 @@
             font-size: 1.2rem; 
             font-weight: bold; 
             transition: color 0.3s;
-            /* [修復視覺疲勞] 設定行高，預留空間給 Emoji，防止高度跳動 */
-            line-height: 1.6;
         }
         
         /* [動畫] 答對時的彈跳動畫 */
@@ -587,9 +585,8 @@
                         <span style={{fontWeight:'bold'}}>Target: {remaining} words</span>
                     </div>
 
-                    {/* [修復視覺疲勞] 計時器改用 visibility 控制顯示，佔位不消失 */}
-                    {isTimedMode && (
-                        <div className="timer-grid" style={{ visibility: hasAnswered ? 'hidden' : 'visible' }}>
+                    {isTimedMode && !hasAnswered && (
+                        <div className="timer-grid">
                             {Array.from({ length: 10 }).map((_, i) => (
                                 <div key={i} className={`timer-block ${i + 1 <= timeLeft ? 'active' : ''} ${timeLeft <= 3 ? 'danger' : ''}`}></div>
                             ))}
