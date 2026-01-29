@@ -305,7 +305,7 @@
         
         const WORDS = window.WORDS || [];
 
-        const APP_VERSION = '2.26'; // Update version
+        const APP_VERSION = '2.27'; // Update version to trigger refresh if needed
         const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
 
         const CATEGORIES = {
@@ -802,15 +802,23 @@
                 setExistingSession(null);
             };
 
-            // [機制 1: 強制置頂 Helper]
-            const applyForceToTopLogic = (generatedList, mode) => {
+            // [機制 1: 強制置頂 Helper] - 已修復跨 Topic 衝突 Bug
+            const applyForceToTopLogic = (generatedList, mode, currentTopic = null) => {
                 try {
                     const sessionStr = localStorage.getItem('igcse_quiz_session');
                     if (!sessionStr) return { list: generatedList, session: null };
                     
                     const session = JSON.parse(sessionStr);
                     
+                    // 1. 檢查模式是否相同 (Adventure vs Review vs Quiz)
                     if (session.mode !== mode) return { list: generatedList, session: null };
+
+                    // 2. [關鍵修復] 如果是 Adventure Mode (MAINLINE)，檢查 Topic 是否一致
+                    // 防止在 Topic A 的進度出現在 Topic B 中
+                    if (mode === 'MAINLINE' && session.topic !== currentTopic) {
+                        console.log("Topic mismatch, ignoring session.");
+                        return { list: generatedList, session: null };
+                    }
 
                     const savedWordId = session.currentWordId;
                     if (!savedWordId) return { list: generatedList, session: null };
@@ -881,7 +889,8 @@
                 let rawList = lockedWords.length > 0 ? lockedWords : allWords;
                 rawList = shuffleArray(rawList);
 
-                const { list, session } = applyForceToTopLogic(rawList, 'MAINLINE');
+                // 更新此處：傳入第三個參數 topic
+                const { list, session } = applyForceToTopLogic(rawList, 'MAINLINE', topic);
 
                 setQuizData(list);
                 setExistingSession(session); 
