@@ -81,7 +81,7 @@
             background: rgba(245, 245, 220, 0.95);
             border-bottom: 2px solid #000;
             /* [iOS優化] 高度自動適應瀏海 */
-            height: 60px; 
+            height: auto; 
             min-height: 60px;
         }
         .header-title { 
@@ -308,7 +308,7 @@
         
         const WORDS = window.WORDS || [];
 
-        const APP_VERSION = '2.25'; // Update version
+        const APP_VERSION = '2.32'; // Update version
         const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
 
         const CATEGORIES = {
@@ -788,7 +788,29 @@
                 catch { return {}; }
             });
             const [maxStreak, setMaxStreak] = useState(() => parseInt(localStorage.getItem('igcse_max_streak_speed_marathon') || '0'));
-            const [dailyStreak, setDailyStreak] = useState(() => parseInt(localStorage.getItem('igcse_daily_streak_v2') || '0'));
+            
+            // [修改] 在初始化時直接進行「斷簽檢查」，確保打開 App 時數字正確
+            const [dailyStreak, setDailyStreak] = useState(() => {
+                const savedStreak = parseInt(localStorage.getItem('igcse_daily_streak_v2') || '0');
+                const lastCheckIn = localStorage.getItem('igcse_last_checkin_v2');
+                
+                if (!lastCheckIn) return savedStreak;
+                
+                const today = new Date().toDateString();
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = yesterday.toDateString();
+                
+                // 檢查：如果最後簽到既不是今天，也不是昨天 -> 斷簽 -> 歸零
+                if (lastCheckIn !== today && lastCheckIn !== yesterdayStr) {
+                    console.log("Streak broken! Resetting to 0.");
+                    localStorage.setItem('igcse_daily_streak_v2', '0');
+                    return 0;
+                }
+                
+                return savedStreak;
+            });
+            
             const [lastCheckIn, setLastCheckIn] = useState(() => localStorage.getItem('igcse_last_checkin_v2'));
             const [currentStreak, setCurrentStreak] = useState(0); 
             const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -1002,15 +1024,8 @@
 
             const today = getTodayString();
             const isCheckedInToday = lastCheckIn === today;
-            let displayDay = dailyStreak;
-            if (!isCheckedInToday) {
-                const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-                if (lastCheckIn === yesterday.toDateString()) {
-                     displayDay = dailyStreak + 1; 
-                } else {
-                     displayDay = 0; 
-                }
-            }
+            // [修改] 直接使用 state 中的 dailyStreak，不再進行 UI 上的預判加分
+            const displayDay = dailyStreak;
 
             return (
                 <div className="page-wrapper">
