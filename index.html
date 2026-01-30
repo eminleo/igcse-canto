@@ -81,7 +81,7 @@
             background: rgba(245, 245, 220, 0.95);
             border-bottom: 2px solid #000;
             /* [iOS優化] 高度自動適應瀏海 */
-            height: auto; 
+            height: 60px; 
             min-height: 60px;
         }
         .header-title { 
@@ -266,6 +266,49 @@
         .word-chinese { font-size: 2rem; font-weight: bold; }
         .word-english { font-size: 1.2rem; color: #666; }
         .word-jyutping-small { font-size: 0.9rem; color: #888; }
+        
+        /* [新增] 成績單 (Report Card) 樣式 */
+        .summary-card {
+            background-color: #fff;
+            border: 2px solid #000;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .score-display {
+            font-size: 4rem;
+            font-weight: bold;
+            margin: 10px 0;
+            color: #000;
+        }
+        .result-list {
+            margin-top: 20px;
+            max-height: 40vh;
+            overflow-y: auto;
+            border-top: 2px dashed #ccc;
+        }
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .result-row-left {
+            text-align: left;
+        }
+        .result-chinese {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .result-english {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .result-icon {
+            font-size: 1.5rem;
+        }
 
         /* 區塊標題 */
         .section-header {
@@ -308,7 +351,7 @@
         
         const WORDS = window.WORDS || [];
 
-        const APP_VERSION = '2.25'; // Update version
+        const APP_VERSION = '2.37'; // Update version
         const OPTION_COLORS = ['#D72600', '#ECD407', '#379711', '#0956BF'];
 
         const CATEGORIES = {
@@ -378,6 +421,13 @@
             const [hasAnswered, setHasAnswered] = useState(false);
             const [timeLeft, setTimeLeft] = useState(10);
             const timerRef = useRef(null);
+            
+            // [新增] 記錄本局成績 (Session History)
+            const [sessionResults, setSessionResults] = useState([]);
+            // [新增] 是否顯示成績單 (Report Card)
+            const [showSummary, setShowSummary] = useState(false);
+            // [新增] 記錄本局是否有新解鎖的單字
+            const [hasNewUnlock, setHasNewUnlock] = useState(false);
 
             const currentWord = wordsToQuiz[currentIndex];
             const isTimedMode = mode === 'SPEED_QUIZ' || mode === 'MARATHON';
@@ -391,7 +441,7 @@
 
             // [機制 3: 存檔 & 防作弊] 每次題目改變時存檔
             useEffect(() => {
-                if (currentWord && currentOptions.length > 0) {
+                if (currentWord && currentOptions.length > 0 && !showSummary) {
                     saveSession({
                         wordsToQuiz: wordsToQuiz, 
                         currentIndex: currentIndex,
@@ -402,7 +452,7 @@
                         topic: currentWord.topic 
                     });
                 }
-            }, [currentIndex, currentWord, currentOptions, mode]);
+            }, [currentIndex, currentWord, currentOptions, mode, showSummary]);
 
             useEffect(() => {
                 if (!currentWord) return;
@@ -440,7 +490,7 @@
 
             // [修復 1: 計時器優化] 移除依賴 timeLeft，避免每秒重啟
             useEffect(() => {
-                if (isTimedMode && !hasAnswered) {
+                if (isTimedMode && !hasAnswered && !showSummary) {
                     timerRef.current = setInterval(() => {
                         setTimeLeft((prevTime) => {
                             if (prevTime <= 1) {
@@ -452,7 +502,7 @@
                     }, 1000);
                 }
                 return () => clearInterval(timerRef.current);
-            }, [isTimedMode, hasAnswered]);
+            }, [isTimedMode, hasAnswered, showSummary]);
 
             // 播放題目的廣東話 [Bug Fix 2: 應用善怡老師]
             const playAudio = () => {
@@ -498,6 +548,13 @@
                 setHasAnswered(true);
                 
                 const isCorrect = selected.id === currentWord.id;
+                
+                // [新增] 記錄本題結果到 sessionResults
+                setSessionResults(prev => [...prev, {
+                    word: currentWord,
+                    correct: isCorrect
+                }]);
+
                 const newProgress = { ...progress };
                 const wordId = currentWord.id;
                 const status = newProgress[wordId] || { status: 'LOCKED', review_count: 0 };
@@ -507,6 +564,11 @@
                 let shouldAddScore = false;
 
                 if (isCorrect) {
+                    // [新增] 檢查是否為新解鎖的字 (用於判斷是否顯示成績單)
+                    if (status.status !== 'UNLOCKED') {
+                        setHasNewUnlock(true);
+                    }
+
                     status.status = 'UNLOCKED';
                     
                     // 2. 判斷是否加分
@@ -569,15 +631,80 @@
                 if (currentIndex < wordsToQuiz.length - 1) {
                     setCurrentIndex(prev => prev + 1);
                 } else {
-                    if (mode === 'REVIEW') {
-                        handleDailyCheckIn();
+                    // [修改] 判斷是否顯示成績單
+                    // Adventure Mode (MAINLINE): 如果有新解鎖的字 (首通)，不顯示成績單
+                    if (mode === 'MAINLINE' && hasNewUnlock) {
+                        clearSession();
+                        onFinish();
+                    } else {
+                        // 其他情況 (Review, Quiz, Marathon, 或 Adventure Mode 重玩) 顯示成績單
+                        setShowSummary(true);
+                        setHeaderTitle("📝 Result");
+                        setHeaderClass("");
                     }
-                    clearSession();
-                    onFinish();
                 }
+            };
+            
+            // [新增] 渲染成績單
+            const renderSummary = () => {
+                const correctCount = sessionResults.filter(r => r.correct).length;
+                const totalCount = sessionResults.length;
+                
+                // [修改] 根據不同模式顯示不同標題，只顯示 Topic 名稱或模式名稱
+                let titleText = "";
+                if (mode === 'REVIEW') titleText = "Review";
+                else if (mode === 'SPEED_QUIZ') titleText = "Quiz";
+                else if (mode === 'MARATHON') titleText = "Marathon";
+                else if (mode === 'MAINLINE') {
+                    // 如果是 Adventure Mode，嘗試抓取當前 Topic 名稱
+                    // 因為 wordsToQuiz 是一整組，取第一個字的 topic 即可
+                    titleText = wordsToQuiz.length > 0 ? wordsToQuiz[0].topic : "Topic";
+                }
+
+                return (
+                    <div className="summary-card">
+                        <h2>{titleText}</h2>
+                        <div className="score-display">
+                            {correctCount} / {totalCount}
+                        </div>
+                        <p style={{color:'#666', marginBottom:'20px'}}>
+                            {correctCount === totalCount ? "Perfect! 🎉" : "Keep practicing! 💪"}
+                        </p>
+                        
+                        <div className="result-list">
+                            {sessionResults.map((item, idx) => (
+                                <div key={idx} className="result-row">
+                                    <div className="result-row-left">
+                                        <span className="result-chinese">{item.word.chinese}</span>
+                                        <span className="result-english">{item.word.english}</span>
+                                    </div>
+                                    <div className="result-icon">
+                                        {item.correct ? '✅' : '❌'}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        <button className="btn btn-primary btn-next" onClick={() => {
+                            // [修改] 在成績單按下 Finish 時才真正結算
+                            if (mode === 'REVIEW') {
+                                handleDailyCheckIn();
+                            }
+                            clearSession();
+                            onFinish();
+                        }}>
+                            Finish
+                        </button>
+                    </div>
+                );
             };
 
             if (!currentWord) return <div>Loading...</div>;
+            
+            // [新增] 如果是成績單模式，直接渲染成績單
+            if (showSummary) {
+                return renderSummary();
+            }
 
             const remaining = wordsToQuiz.length - currentIndex;
 
@@ -1181,4 +1308,3 @@
     </script>
 </body>
 </html>
-
